@@ -1,5 +1,4 @@
 node_modules/
 real-logs/
-.env
 .claude/
 *.lnk
