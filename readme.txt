@@ -18,32 +18,14 @@ REQUIREMENTS
 QUICK START
 --------------------------------------------------------------------------------
 
-  1. Open a terminal in this folder.
-
-  2. Copy the example config and edit it:
-
-       copy .env.example .env
-
-     Then open .env in a text editor and set LOG_FOLDER to the folder where
+  1. Open .env in a text editor and set LOG_FOLDER to the folder where
      Mosart writes its .log files (e.g. C:\MMLogs\).
 
-  3. Double-click  start.bat
+  2. Double-click  start.bat
 
-     The batch file will automatically install dependencies on the first run
-     (requires an internet connection that first time only), then start the
-     server and open the dashboard in your browser.
-
-     To start from the terminal instead:
-
-       npm install   (first run only)
-       npm start
-
-  4. Open your browser at:
-
-       http://localhost:3002
-
-     The port can be changed in .env (PORT=3002).
-     start.bat opens the browser automatically, so this step is optional.
+     On the first run it will install dependencies automatically (requires
+     an internet connection that one time). After that it starts the server
+     and opens the dashboard in your browser straight away.
 
   The dashboard will update in real time as Mosart writes to its log files.
   No browser refresh is needed.
