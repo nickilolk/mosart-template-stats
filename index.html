@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mosart Template Stats</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0f1117; --surface:#1a1d27; --surface2:#22263a; --border:#2e3250;
+      --accent:#4f8ef7; --accent2:#7c5cbf; --green:#34d399; --red:#f87171;
+      --amber:#fbbf24; --text:#e2e8f0; --muted:#8892a4;
+      --font:'Segoe UI',system-ui,sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; display:flex; flex-direction:column; }
+
+    /* Header */
+    header { background:var(--surface); border-bottom:1px solid var(--border); padding:14px 24px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    header h1 { font-size:1rem; font-weight:600; letter-spacing:.04em; flex:1; }
+    header h1 span { color:var(--accent); }
+    .pill { display:inline-flex; align-items:center; gap:6px; font-size:.72rem; padding:4px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--border); white-space:nowrap; }
+    .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+    .dot.connected { background:var(--green); box-shadow:0 0 6px var(--green); }
+    .dot.error { background:var(--red); }
+
+    /* Stat cards */
+    .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:12px; padding:20px 24px 0; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; }
+    .card-label { font-size:.69rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+    .card-value { font-size:1.55rem; font-weight:700; margin-top:4px; }
+
+    /* Tabs */
+    .tabs { display:flex; gap:0; padding:16px 24px 0; border-bottom:1px solid var(--border); margin:16px 24px 0; }
+    .tab { padding:8px 18px; font-size:.82rem; font-weight:500; cursor:pointer; border-bottom:2px solid transparent; color:var(--muted); transition:color .15s,border-color .15s; }
+    .tab.active { color:var(--text); border-color:var(--accent); }
+    .tab:hover:not(.active) { color:var(--text); }
+
+    /* Tab panels */
+    .tab-content { display:none; }
+    .tab-content.active { display:grid; }
+
+    /* Stats tab layout */
+    #tab-stats { grid-template-columns:1fr 320px; gap:16px; padding:16px 24px 24px; }
+    @media(max-width:860px){ #tab-stats{ grid-template-columns:1fr; } }
+
+    /* Unused tab layout */
+    #tab-unused { grid-template-columns:1fr; padding:16px 24px 24px; }
+
+    /* Panels */
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+    .panel-header { padding:13px 18px 10px; font-size:.76rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+    .chart-wrap { flex:none; padding:16px; position:relative; }
+
+    /* Controls */
+    select, button { font-family:var(--font); font-size:.78rem; }
+    select { background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:4px 8px; }
+    button { background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:5px 12px; cursor:pointer; transition:background .15s; }
+    button:hover { background:var(--border); }
+    button.danger { border-color:var(--red); color:var(--red); }
+    button.danger:hover { background:rgba(248,113,113,.12); }
+    button.amber { border-color:var(--amber); color:var(--amber); }
+    button.amber:hover { background:rgba(251,191,36,.1); }
+
+    /* Live feed */
+    .feed { overflow-y:auto; flex:1; }
+    .feed-item { display:grid; grid-template-columns:1fr auto; gap:8px; padding:9px 18px; border-bottom:1px solid var(--border); font-size:.8rem; animation:fadeIn .3s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:none} }
+    .feed-item:last-child { border-bottom:none; }
+    .feed-name { color:var(--text); font-weight:500; }
+    .feed-meta { color:var(--muted); font-size:.71rem; }
+    .feed-count { background:var(--surface2); border:1px solid var(--border); border-radius:999px; padding:2px 8px; font-size:.71rem; color:var(--accent); white-space:nowrap; align-self:center; }
+    .feed-story { font-size:.72rem; color:var(--muted); margin-top:1px; }
+
+    /* Unused templates list */
+    .unused-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .search-box { background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:5px 10px; font-size:.8rem; font-family:var(--font); width:220px; }
+    .search-box::placeholder { color:var(--muted); }
+    .unused-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:8px; padding:16px; overflow-y:auto; max-height:520px; }
+    .unused-chip { background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:9px 13px; font-size:.82rem; color:var(--text); display:flex; align-items:center; gap:8px; }
+    .unused-chip::before { content:''; width:6px; height:6px; border-radius:50%; background:var(--amber); flex-shrink:0; }
+    .unused-chip.highlight { border-color:var(--amber); }
+
+    .empty { padding:32px 18px; text-align:center; color:var(--muted); font-size:.85rem; }
+
+    /* In-page confirm dialog */
+    .dialog-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; align-items:center; justify-content:center; }
+    .dialog-backdrop.visible { display:flex; }
+    .dialog { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:24px 28px; min-width:280px; max-width:360px; }
+    .dialog-title { font-size:.95rem; font-weight:600; margin-bottom:8px; }
+    .dialog-body  { font-size:.82rem; color:var(--muted); margin-bottom:20px; }
+    .dialog-btns  { display:flex; gap:8px; justify-content:flex-end; }
+    .badge { display:inline-block; padding:2px 7px; border-radius:999px; font-size:.7rem; font-weight:600; }
+    .badge.amber { background:rgba(251,191,36,.15); color:var(--amber); border:1px solid rgba(251,191,36,.3); }
+    .badge.green { background:rgba(52,211,153,.12); color:var(--green); border:1px solid rgba(52,211,153,.25); }
+
+    .controls-row { display:flex; align-items:center; gap:8px; }
+
+    /* Timeframe picker */
+    .custom-range { display:none; align-items:center; gap:8px; padding:8px 18px; background:var(--surface2); border-bottom:1px solid var(--border); flex-wrap:wrap; font-size:.78rem; color:var(--muted); }
+    .custom-range.visible { display:flex; }
+    input[type="datetime-local"] { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:4px 8px; font-size:.78rem; font-family:var(--font); color-scheme:dark; }
+
+    /* Settings modal */
+    .settings-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100; align-items:flex-start; justify-content:flex-end; }
+    .settings-modal.visible { display:flex; }
+    .settings-panel { background:var(--surface); border-left:1px solid var(--border); width:340px; height:100vh; overflow-y:auto; display:flex; flex-direction:column; }
+    .settings-panel-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); font-size:.9rem; font-weight:600; }
+    .settings-close { background:none; border:none; color:var(--muted); font-size:1.1rem; cursor:pointer; padding:2px 6px; border-radius:4px; }
+    .settings-close:hover { color:var(--text); }
+    .settings-section { padding:16px 20px; border-bottom:1px solid var(--border); }
+    .settings-section-title { font-size:.68rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:12px; }
+    .settings-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; font-size:.82rem; }
+    .settings-row:last-child { margin-bottom:0; }
+    .settings-label { color:var(--muted); flex-shrink:0; }
+    .settings-value { color:var(--text); text-align:right; word-break:break-all; font-size:.78rem; }
+    .settings-btn { margin-top:4px; width:100%; }
+    .gear-btn { background:none; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 9px; cursor:pointer; font-size:.9rem; transition:color .15s,border-color .15s; }
+    .gear-btn:hover { color:var(--text); border-color:var(--text); }
+    .settings-field { display:flex; flex-direction:column; gap:4px; margin-bottom:12px; }
+    .settings-field:last-child { margin-bottom:0; }
+    .settings-input { background:var(--surface2); border:1px solid var(--border); color:var(--text); border-radius:6px; padding:6px 9px; font-size:.78rem; font-family:var(--font); width:100%; }
+    .settings-input:focus { outline:none; border-color:var(--accent); }
+    .tip { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; border-radius:50%; background:var(--surface2); border:1px solid var(--border); color:var(--muted); font-size:.65rem; cursor:default; position:relative; }
+    .tip:hover::after { content:attr(data-tip); position:absolute; left:20px; top:50%; transform:translateY(-50%); background:#1e2235; border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:.74rem; color:var(--text); white-space:nowrap; z-index:10; pointer-events:none; }
+
+    /* Filter buttons */
+    .filter-bar { display:flex; gap:5px; padding:8px 18px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:center; }
+    .fbtn { font-size:.72rem; font-weight:700; padding:3px 9px; border-radius:5px; cursor:pointer; border:none; outline:2px solid transparent; outline-offset:1px; font-family:var(--font); transition:opacity .15s,outline-color .15s; line-height:1.5; text-shadow:0 0 4px rgba(0,0,0,.5); min-width:44px; text-align:center; clip-path:inset(0 round 5px); }
+    .fbtn.on  { outline-color:rgba(255,255,255,.75); opacity:1; }
+    .fbtn.off { opacity:.3; }
+  </style>
+</head>
+<body>
+
+<div class="dialog-backdrop" id="confirm-dialog">
+  <div class="dialog">
+    <div class="dialog-title" id="confirm-title"></div>
+    <div class="dialog-body"  id="confirm-body"></div>
+    <div class="dialog-btns">
+      <button onclick="confirmResolve(false)">Cancel</button>
+      <button class="danger" onclick="confirmResolve(true)" id="confirm-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <h1>Viz Mosart <span>Template Stats</span></h1>
+  <div class="pill"><span class="dot" id="dot"></span><span id="status-text">Connecting…</span></div>
+  <div class="pill" id="folder-pill" style="color:var(--muted)">—</div>
+  <div class="pill" id="ct-pill" style="color:var(--muted)">ChannelTemplates: —</div>
+  <button class="gear-btn" onclick="openSettings()" title="Settings">⚙</button>
+</header>
+
+<div class="settings-modal" id="settings-modal" onclick="closeSettingsIfBackdrop(event)">
+  <div class="settings-panel">
+    <div class="settings-panel-header">
+      Settings
+      <button class="settings-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Monitoring</div>
+      <div class="settings-field">
+        <label class="settings-label">Log folder</label>
+        <input class="settings-input" type="text" id="set-log-folder" />
+      </div>
+      <div class="settings-field" style="flex-direction:row;align-items:center;gap:10px">
+        <label class="settings-label" for="set-polling">Use polling <span class="tip" data-tip="Enable for log files on a network drive. Native fs events may not work over UNC paths.">?</span></label>
+        <input type="checkbox" id="set-polling" onchange="togglePollInterval()" />
+      </div>
+      <div class="settings-field" id="poll-interval-row" style="display:none">
+        <label class="settings-label">Poll interval (ms)</label>
+        <input class="settings-input" type="number" id="set-poll-interval" min="100" step="100" />
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Channel Templates</div>
+      <div class="settings-field">
+        <label class="settings-label">File path</label>
+        <input class="settings-input" type="text" id="set-ct-path" />
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div id="settings-status" style="font-size:.78rem;margin-bottom:10px;display:none"></div>
+      <button class="settings-btn" onclick="saveSettings()">Save settings</button>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Data</div>
+      <button class="settings-btn" onclick="downloadStats('json')">↓ Download JSON</button>
+      <button class="settings-btn" style="margin-top:6px" onclick="downloadStats('xml')">↓ Download XML</button>
+      <button class="settings-btn danger" style="margin-top:6px" onclick="closeSettings(); resetStats()">Reset Statistics</button>
+    </div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card"><div class="card-label">Total Switches</div><div class="card-value" style="color:var(--accent)" id="stat-total">0</div></div>
+  <div class="card"><div class="card-label">Unique Templates</div><div class="card-value" style="color:var(--accent2)" id="stat-unique">0</div></div>
+  <div class="card"><div class="card-label">Most Used</div><div class="card-value" style="color:var(--green);font-size:.9rem;margin-top:8px" id="stat-top">—</div></div>
+  <div class="card"><div class="card-label">Unused Templates</div><div class="card-value" style="color:var(--amber)" id="stat-unused">—</div></div>
+  <div class="card"><div class="card-label">Tracking Since</div><div class="card-value" style="font-size:.82rem;color:var(--muted);margin-top:6px" id="stat-since">—</div></div>
+</div>
+
+<!-- Tabs -->
+<div style="padding:0 24px">
+  <div class="tabs" style="margin:16px 0 0;padding:0;border-bottom:1px solid var(--border)">
+    <div class="tab active" onclick="switchTab('stats')">Usage Chart</div>
+    <div class="tab" onclick="switchTab('unused')" id="unused-tab-btn">Unused Templates</div>
+  </div>
+</div>
+
+<!-- Stats tab -->
+<div id="tab-stats" class="tab-content active">
+  <div class="panel">
+    <div class="panel-header">
+      Template Usage
+      <div class="controls-row">
+        <select id="timeframe" onchange="onTimeframeChange()">
+          <option value="all">All time</option>
+          <option value="1h">Last hour</option>
+          <option value="24h">Last 24 hours</option>
+          <option value="custom">Custom…</option>
+        </select>
+        Show top
+        <select id="top-n"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select>
+        <button class="danger" onclick="resetStats()">Reset</button>
+      </div>
+    </div>
+    <div class="custom-range" id="custom-range">
+      From <input type="datetime-local" id="custom-from" onchange="applyFilter()" />
+      To &nbsp;<input type="datetime-local" id="custom-to"   onchange="applyFilter()" />
+    </div>
+    <div class="filter-bar" id="filter-bar"></div>
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">Live Events</div>
+    <div class="feed" id="feed"><div class="empty">Waiting for template switches…</div></div>
+  </div>
+</div>
+
+<!-- Unused templates tab -->
+<div id="tab-unused" class="tab-content">
+  <div class="panel">
+    <div class="panel-header">
+      <span>Unused Templates <span class="badge amber" id="unused-badge">0</span></span>
+      <div class="unused-toolbar">
+        <input class="search-box" type="text" id="unused-search" placeholder="Filter templates…" oninput="renderUnused()" />
+        <button class="amber" onclick="loadUnused()">Refresh</button>
+      </div>
+    </div>
+    <div class="unused-grid" id="unused-grid">
+      <div class="empty" style="grid-column:1/-1">Switch to this tab to load unused templates</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allTemplates = [], recentEvents = [], unusedList = [], chart = null, topN = 20;
+let unusedLoaded = false;
+let wsTemplates = [], wsRecentEvents = [], wsTotal = 0, wsUnique = 0, wsUnusedCount = null, wsStartTime = null;
+
+// ── Category filter buttons ───────────────────────────────────────────────────
+const FILTERS = [
+  { prefix: 'CAMERA',         label: 'CAM', chartColor: '#22c55e',                          style: 'background:#16a34a;color:#fff' },
+  { prefix: 'FULL SOUND CLIP',label: 'PKG', chartColor: '#3b82f6',                          style: 'background:#2563eb;color:#fff' },
+  { prefix: 'VOICE_OVER',     label: 'VO',  chartColors: ['#2563eb','#16a34a'],              style: 'background:linear-gradient(to bottom,#2563eb 50%,#16a34a 50%);color:#fff' },
+  { prefix: 'GRAPHICS',       label: 'GFX', chartColor: '#f59e0b',                          style: 'background:#ca8a04;color:#fff' },
+  { prefix: 'LIVE',           label: 'LIV', chartColor: '#ef4444',                          style: 'background:#dc2626;color:#fff' },
+  { prefix: 'VIDEO_EFFECT',   label: 'DVE', chartColors: ['#ca8a04','#dc2626'],              style: 'background:linear-gradient(to bottom,#ca8a04 50%,#dc2626 50%);color:#fff' },
+  { prefix: 'BREAK',          label: 'BRK', chartColor: '#94a3b8',                          style: 'background:#f1f5f9;color:#000;text-shadow:none' },
+  { prefix: 'MISC',           label: 'JIN', chartColor: '#9ca3af',                          style: 'background:#6b7280;color:#fff' },
+  { prefix: 'AUDIO',          label: '🔊',  chartColor: '#64748b',                          style: 'background:#111;color:#fff' },
+  { prefix: 'ACCESSORIES',    label: '+',   chartColor: '#a78bfa',                          style: 'background:#111;color:#fff;font-size:1rem' },
+  { prefix: 'DIRECTTAKE',     label: '⚡',  chartColor: '#a855f7',                          style: 'background:#7c3aed;color:#fff' },
+];
+
+function getBarColor(context, name) {
+  const seg = name.split(' + ')[0].trim().toUpperCase();
+  const f = FILTERS.find(f => seg.startsWith(f.prefix.toUpperCase()));
+  if (!f) return '#5a6fa8';
+  if (!f.chartColors) return f.chartColor;
+
+  // Split gradient: top half color[0], bottom half color[1]
+  const bar = context.chart.getDatasetMeta(0).data[context.dataIndex];
+  if (!bar) return f.chartColors[0];
+  const top    = bar.y - bar.height / 2;
+  const bottom = bar.y + bar.height / 2;
+  if (!isFinite(top) || !isFinite(bottom)) return f.chartColors[0];
+  const grad = context.chart.ctx.createLinearGradient(0, top, 0, bottom);
+  grad.addColorStop(0,    f.chartColors[0]);
+  grad.addColorStop(0.5,  f.chartColors[0]);
+  grad.addColorStop(0.5,  f.chartColors[1]);
+  grad.addColorStop(1,    f.chartColors[1]);
+  return grad;
+}
+
+const activeFilters = new Set();
+
+function initFilterBar() {
+  document.getElementById('filter-bar').innerHTML = FILTERS.map(f =>
+    `<button class="fbtn" data-prefix="${f.prefix}" style="${f.style}" onclick="toggleFilter('${f.prefix}')" title="${f.prefix}">${f.label}</button>`
+  ).join('');
+}
+
+function toggleFilter(prefix) {
+  if (activeFilters.has(prefix)) activeFilters.delete(prefix);
+  else activeFilters.add(prefix);
+  updateFilterButtons();
+  renderChart();
+  renderFeed();
+}
+
+function updateFilterButtons() {
+  const anyOn = activeFilters.size > 0;
+  document.querySelectorAll('.fbtn').forEach(btn => {
+    const on = activeFilters.has(btn.dataset.prefix);
+    btn.classList.toggle('on',  on);
+    btn.classList.toggle('off', anyOn && !on);
+  });
+}
+
+function matchesFilter(name) {
+  if (activeFilters.size === 0) return true;
+  const seg = name.split(' + ')[0].trim().toUpperCase();
+  for (const p of activeFilters) {
+    if (seg.startsWith(p.toUpperCase())) return true;
+  }
+  return false;
+}
+
+// ── Chart ────────────────────────────────────────────────────────────────────
+function initChart() {
+  const ctx = document.getElementById('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${c.parsed.x} switch${c.parsed.x !== 1 ? 'es' : ''}` } } },
+      scales: {
+        x: { grid: { color: '#2e3250' }, ticks: { color: '#8892a4', font: { size: 11 } } },
+        y: { grid: { display: false }, ticks: { color: '#e2e8f0', font: { size: 11 },
+          callback: function(v) { const l = this.getLabelForValue(v); return l && l.length > 32 ? l.slice(0, 30) + '…' : l; }
+        }}
+      }
+    }
+  });
+}
+
+function renderChart() {
+  if (!chart) return;
+  const slice = allTemplates.filter(t => matchesFilter(t.name)).slice(0, topN);
+  chart.data.labels = slice.map(t => t.name);
+  chart.data.datasets[0].data = slice.map(t => t.count);
+  chart.data.datasets[0].backgroundColor = ctx => getBarColor(ctx, slice[ctx.dataIndex]?.name || '');
+  const h = Math.max(240, slice.length * 36 + 60);
+  chart.canvas.parentNode.style.height = h + 'px';
+  chart.canvas.style.height = h + 'px';
+  chart.update();
+}
+
+// ── Cards & feed ─────────────────────────────────────────────────────────────
+function renderCards(total, unique, since, unusedCount, knownCount) {
+  document.getElementById('stat-total').textContent  = total.toLocaleString();
+  document.getElementById('stat-unique').textContent = unique;
+  document.getElementById('stat-top').textContent    = allTemplates[0]?.name || '—';
+  if (unusedCount !== null && unusedCount !== undefined) {
+    document.getElementById('stat-unused').textContent = unusedCount;
+    const btn = document.getElementById('unused-tab-btn');
+    btn.textContent = `Unused Templates (${unusedCount})`;
+  }
+  if (since) {
+    const d = new Date(since);
+    document.getElementById('stat-since').textContent = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+}
+
+function renderFeed() {
+  const feed = document.getElementById('feed');
+  const filtered = recentEvents.filter(e => matchesFilter(e.template));
+  if (!filtered.length) { feed.innerHTML = '<div class="empty">Waiting for template switches…</div>'; return; }
+  feed.innerHTML = filtered.slice(0, 20).map(e => {
+    const t = e.time ? new Date(e.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+    const h = e.hostname ? ` · ${e.hostname}` : '';
+    const s = e.story   ? `<div class="feed-story">${esc(e.story)}</div>` : '';
+    return `<div class="feed-item"><div><div class="feed-name">${esc(e.template)}</div>${s}<div class="feed-meta">${t}${h}</div></div><div class="feed-count">×${e.count}</div></div>`;
+  }).join('');
+}
+
+// ── Unused templates ─────────────────────────────────────────────────────────
+function loadUnused() {
+  fetch('/api/unused')
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { document.getElementById('unused-grid').innerHTML = `<div class="empty" style="grid-column:1/-1">${esc(data.error)}<br><small style="color:var(--muted)">${esc(data.path || '')}</small></div>`; return; }
+      unusedList = data.unused || [];
+      document.getElementById('unused-badge').textContent = unusedList.length;
+      renderUnused();
+    })
+    .catch(() => {
+      document.getElementById('unused-grid').innerHTML = '<div class="empty" style="grid-column:1/-1">Failed to load unused templates</div>';
+    });
+}
+
+function renderUnused() {
+  const q = document.getElementById('unused-search').value.trim().toUpperCase();
+  const filtered = q ? unusedList.filter(n => n.toUpperCase().includes(q)) : unusedList;
+  const grid = document.getElementById('unused-grid');
+  if (!filtered.length) {
+    grid.innerHTML = unusedList.length
+      ? '<div class="empty" style="grid-column:1/-1">No templates match your filter</div>'
+      : '<div class="empty" style="grid-column:1/-1">All known templates have been used — nothing to clean up 🎉</div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(n => `<div class="unused-chip">${esc(n)}</div>`).join('');
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['stats','unused'][i] === name));
+  document.querySelectorAll('.tab-content').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'unused' && !unusedLoaded) { unusedLoaded = true; loadUnused(); }
+}
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+let ws = null, retryMs = 1000;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}`);
+  ws.onopen  = () => { setStatus('connected', 'Live'); retryMs = 1000; };
+  ws.onmessage = ({ data }) => handle(JSON.parse(data));
+  ws.onclose = () => { setStatus('error', `Reconnecting in ${retryMs / 1000}s…`); setTimeout(connect, retryMs); retryMs = Math.min(retryMs * 2, 16000); };
+  ws.onerror = () => ws.close();
+}
+
+function handle(msg) {
+  if (msg.type === 'init' || msg.type === 'reset') {
+    wsTemplates = msg.templates || [];
+    wsRecentEvents = msg.recentEvents || [];
+    wsTotal = msg.totalEvents || 0;
+    wsUnique = msg.uniqueCount || 0;
+    wsUnusedCount = msg.unusedCount ?? null;
+    wsStartTime = msg.startTime || null;
+    if (msg.type === 'reset') { unusedList = []; unusedLoaded = false; }
+    applyFilter();
+  } else if (msg.type === 'template_hit') {
+    wsTemplates = msg.templates || wsTemplates;
+    if (msg.event) { wsRecentEvents.unshift(msg.event); if (wsRecentEvents.length > 100) wsRecentEvents.pop(); }
+    wsTotal = msg.totalEvents || wsTotal;
+    wsUnique = msg.uniqueCount || wsUnique;
+    wsUnusedCount = msg.unusedCount ?? wsUnusedCount;
+    applyFilter();
+  }
+}
+
+// ── Timeframe filter ─────────────────────────────────────────────────────────
+function onTimeframeChange() {
+  const val = document.getElementById('timeframe').value;
+  document.getElementById('custom-range').classList.toggle('visible', val === 'custom');
+  applyFilter();
+}
+
+function getTimeRange() {
+  const val = document.getElementById('timeframe').value;
+  if (val === '1h')  { const to = new Date(); return { from: new Date(to - 3600000).toISOString(), to: to.toISOString() }; }
+  if (val === '24h') { const to = new Date(); return { from: new Date(to - 86400000).toISOString(), to: to.toISOString() }; }
+  if (val === 'custom') {
+    const f = document.getElementById('custom-from').value;
+    const t = document.getElementById('custom-to').value;
+    const range = {};
+    if (f) range.from = new Date(f).toISOString();
+    if (t) range.to   = new Date(t).toISOString();
+    return range;
+  }
+  return {};
+}
+
+function applyFilter() {
+  const { from, to } = getTimeRange();
+  if (!from && !to) {
+    // No filter — use live WebSocket data directly
+    allTemplates  = wsTemplates;
+    recentEvents  = wsRecentEvents;
+    renderChart();
+    renderCards(wsTotal, wsUnique, wsStartTime, wsUnusedCount);
+    renderFeed();
+    return;
+  }
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to)   params.set('to', to);
+  fetch('/api/stats?' + params)
+    .then(r => r.json())
+    .then(data => {
+      allTemplates = data.templates || [];
+      recentEvents = data.recentEvents || [];
+      renderChart();
+      renderCards(data.totalEvents, data.uniqueCount, data.startTime, data.unusedCount, data.knownCount);
+      renderFeed();
+    })
+    .catch(() => {});
+}
+
+function setStatus(s, t) { document.getElementById('dot').className = 'dot ' + s; document.getElementById('status-text').textContent = t; }
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+let _confirmResolve = null;
+function showConfirm(title, body, okLabel = 'OK') {
+  document.getElementById('confirm-title').textContent = title;
+  document.getElementById('confirm-body').textContent  = body;
+  document.getElementById('confirm-ok').textContent    = okLabel;
+  document.getElementById('confirm-dialog').classList.add('visible');
+  return new Promise(res => { _confirmResolve = res; });
+}
+function confirmResolve(result) {
+  document.getElementById('confirm-dialog').classList.remove('visible');
+  if (_confirmResolve) { _confirmResolve(result); _confirmResolve = null; }
+}
+function resetStats() {
+  showConfirm('Reset statistics', 'This will clear all collected data. Are you sure?', 'Reset')
+    .then(ok => { if (ok) fetch('/api/reset', { method: 'POST' }); });
+}
+function downloadStats(format) {
+  const { from, to } = getTimeRange();
+  const params = new URLSearchParams({ format });
+  if (from) params.set('from', from);
+  if (to)   params.set('to', to);
+  window.location = '/api/download?' + params;
+}
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+function openSettings()  { document.getElementById('settings-modal').classList.add('visible'); }
+function closeSettings() { document.getElementById('settings-modal').classList.remove('visible'); }
+function closeSettingsIfBackdrop(e) { if (e.target === document.getElementById('settings-modal')) closeSettings(); }
+
+function togglePollInterval() {
+  const on = document.getElementById('set-polling').checked;
+  document.getElementById('poll-interval-row').style.display = on ? 'flex' : 'none';
+}
+
+function saveSettings() {
+  const status = document.getElementById('settings-status');
+  status.style.display = 'none';
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      logFolder:       document.getElementById('set-log-folder').value.trim(),
+      channelTemplates: document.getElementById('set-ct-path').value.trim(),
+      usePolling:      document.getElementById('set-polling').checked,
+      pollingInterval: parseInt(document.getElementById('set-poll-interval').value) || 1000,
+    }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    status.style.display = 'block';
+    if (d.restartRequired) {
+      status.style.color = 'var(--amber)';
+      status.textContent = 'Saved. Restart the server for log folder and polling changes to take effect.';
+    } else {
+      status.style.color = 'var(--green)';
+      status.textContent = 'Settings saved.';
+    }
+    document.getElementById('ct-pill').textContent = `${d.knownCount} templates loaded`;
+  })
+  .catch(() => {
+    status.style.display = 'block';
+    status.style.color = 'var(--red)';
+    status.textContent = 'Failed to save settings.';
+  });
+}
+
+// ── Config ───────────────────────────────────────────────────────────────────
+fetch('/api/config').then(r => r.json()).then(c => {
+  document.getElementById('folder-pill').textContent = c.logFolder;
+  const ct = document.getElementById('ct-pill');
+  if (c.templatesLoaded) {
+    ct.textContent = `${c.knownCount} templates loaded`;
+    ct.style.color = 'var(--green)';
+  } else {
+    ct.textContent = 'ChannelTemplates: not found';
+    ct.style.color = 'var(--amber)';
+  }
+  if (c.gallery) {
+    document.title = `Viz Mosart Template Stats — ${c.gallery}`;
+    document.querySelector('header h1').innerHTML =
+      `Viz Mosart <span>Template Stats</span> — ${esc(c.gallery)}`;
+  }
+  // Populate settings inputs
+  document.getElementById('set-log-folder').value    = c.logFolder;
+  document.getElementById('set-ct-path').value       = c.channelTemplates;
+  document.getElementById('set-polling').checked     = c.usePolling;
+  document.getElementById('set-poll-interval').value = c.pollInterval;
+  if (c.usePolling) document.getElementById('poll-interval-row').style.display = 'flex';
+}).catch(() => {});
+
+document.getElementById('top-n').addEventListener('change', e => { topN = parseInt(e.target.value); renderChart(); });
+
+initChart();
+initFilterBar();
+connect();
+</script>
+</body>
+</html>
