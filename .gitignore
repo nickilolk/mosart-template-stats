@@ -1,4 +1,5 @@
 node_modules/
 real-logs/
+stats-logs/
 .claude/
 *.lnk

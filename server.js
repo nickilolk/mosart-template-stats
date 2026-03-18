@@ -7,6 +7,7 @@
  *   CHANNEL_TEMPLATES=C:\channeltemplate\channeltemplates.xml
  *   USE_POLLING=false
  *   POLLING_INTERVAL=1000
+ *   STATS_LOG_DIR=.\stats-logs   (optional, defaults to stats-logs beside server.js)
  */
 
 require('dotenv').config();
@@ -26,6 +27,7 @@ const LOG_FOLDER         = process.env.LOG_FOLDER         || 'C:\\MMLogs';
 const CHANNEL_TEMPLATES  = process.env.CHANNEL_TEMPLATES  || DEFAULT_PATH;
 const USE_POLLING        = process.env.USE_POLLING === 'true';
 const POLLING_INTERVAL   = parseInt(process.env.POLLING_INTERVAL || '1000', 10);
+const STATS_LOG_DIR      = path.resolve(process.env.STATS_LOG_DIR || path.join(__dirname, 'stats-logs'));
 const MAX_RECENT         = 100;
 
 // ─── ChannelTemplates ─────────────────────────────────────────────────────────
@@ -85,6 +87,58 @@ function getFullStats() {
   };
 }
 
+// ─── Stats log writer ─────────────────────────────────────────────────────────
+
+function writeStatsLog(reason) {
+  if (stats.totalEvents === 0) return;  // nothing to write
+
+  try {
+    fs.mkdirSync(STATS_LOG_DIR, { recursive: true });
+  } catch (err) {
+    console.error('[StatsLog] Could not create directory:', err.message);
+    return;
+  }
+
+  const now       = new Date();
+  const pad       = n => String(n).padStart(2, '0');
+  const stamp     = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`
+                  + `_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const fileName  = `stats-${stamp}.csv`;
+  const filePath  = path.join(STATS_LOG_DIR, fileName);
+
+  const sorted = Object.entries(stats.templates)
+    .sort((a, b) => b[1] - a[1]);
+
+  const lines = [
+    `# Mosart Template Stats — ${now.toISOString()}`,
+    `# Reason: ${reason}`,
+    `# Total switches: ${stats.totalEvents}`,
+    `# Unique templates: ${sorted.length}`,
+    `# Tracking since: ${stats.startTime}`,
+    'template,count',
+    ...sorted.map(([name, count]) => `"${name.replace(/"/g, '""')}",${count}`),
+  ];
+
+  try {
+    fs.writeFileSync(filePath, lines.join('\r\n'), 'utf8');
+    console.log(`[StatsLog] Written: ${filePath} (${reason}, ${sorted.length} templates)`);
+  } catch (err) {
+    console.error('[StatsLog] Write failed:', err.message);
+  }
+}
+
+function scheduleMidnight() {
+  const now          = new Date();
+  const midnight     = new Date(now);
+  midnight.setDate(midnight.getDate() + 1);
+  midnight.setHours(0, 0, 0, 0);
+  const msUntil      = midnight - now;
+  setTimeout(() => {
+    writeStatsLog('midnight');
+    scheduleMidnight();
+  }, msUntil);
+}
+
 // ─── Template hit handler ──────────────────────────────────────────────────────
 
 function onTemplate(templateName, meta) {
@@ -100,7 +154,10 @@ function onTemplate(templateName, meta) {
   };
 
   allEvents.push({ template: event.template, time: event.time, hostname: event.hostname });
-  if (allEvents.length > 200000) allEvents.shift();  // guard against unbounded growth
+  if (allEvents.length > 200000) {
+    writeStatsLog('memory-full');
+    allEvents.shift();  // guard against unbounded growth
+  }
 
   stats.recentEvents.unshift(event);
   if (stats.recentEvents.length > MAX_RECENT) stats.recentEvents.length = MAX_RECENT;
@@ -306,5 +363,7 @@ server.listen(PORT, () => {
   console.log('  Log folder      : ' + path.resolve(LOG_FOLDER));
   console.log('  ChannelTemplates: ' + path.resolve(CHANNEL_TEMPLATES) +
     (knownTemplates ? ` (${knownTemplates.size} templates)` : ' (NOT FOUND)'));
+  console.log('  Stats log dir   : ' + STATS_LOG_DIR);
   console.log('');
+  scheduleMidnight();
 });
