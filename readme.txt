@@ -18,17 +18,17 @@ REQUIREMENTS
 QUICK START
 --------------------------------------------------------------------------------
 
-  1. Open .env in a text editor and set LOG_FOLDER to the folder where
-     Mosart writes its .log files (e.g. C:\MMLogs\).
+  Double-click  start.bat
 
-  2. Double-click  start.bat
-
-     On the first run it will install dependencies automatically (requires
-     an internet connection that one time). After that it starts the server
-     and opens the dashboard in your browser straight away.
+  On the first run it will install dependencies automatically (requires an
+  internet connection that one time). After that it starts the server and
+  opens the dashboard in your browser straight away.
 
   The dashboard will update in real time as Mosart writes to its log files.
   No browser refresh is needed.
+
+  If your log folder or other settings differ from the defaults, see the
+  CONFIGURATION section below.
 
 
 --------------------------------------------------------------------------------
