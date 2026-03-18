@@ -83,6 +83,12 @@ CONFIGURATION  (.env file)
     Default: 1000
     Example: POLLING_INTERVAL=1000
 
+  STATS_LOG_DIR
+    Where daily stats CSV files are written (see STATS LOGGING below).
+    The folder is created automatically if it does not exist.
+    Default: stats-logs\ beside server.js
+    Example: STATS_LOG_DIR=C:\MosartStats\logs
+
 Network drive example:
 
   LOG_FOLDER=\\SERVER\Share\MosartLogs
@@ -203,7 +209,7 @@ The parser watches for three types of Mosart log events:
   ExSwitchBackGrounds
     A standard template switch. Extracts the Template= field from the
     CDATA section. Multiple templates separated by "+" are joined as
-    "TEMPLATE A + TEMPLATE B". Slot numbers like "(1)" are stripped.
+    "TEMPLATE TYPE + TEMPLATE VARIANT". Slot numbers like "(1)" are stripped.
     The Story name from the log is also captured and shown in Live Events.
 
   TakeExternals
@@ -218,6 +224,42 @@ the life of the server session (or until Reset is clicked).
 
 The server keeps up to 200,000 events in memory for time-range filtering.
 If you run for very long sessions this can be reduced in server.js.
+
+
+--------------------------------------------------------------------------------
+STATS LOGGING
+--------------------------------------------------------------------------------
+
+The server automatically writes a CSV summary of template usage to disk.
+This is a snapshot of totals — not a per-event log — so the files stay small.
+
+  When a file is written:
+    - Every night at midnight (the scheduler starts automatically with the server)
+    - Whenever the in-memory event buffer reaches 200,000 events
+
+  Where files are written:
+    stats-logs\  (beside server.js, created automatically)
+    Override with STATS_LOG_DIR= in .env.
+
+  File naming:
+    stats-YYYY-MM-DD_HH-MM-SS.csv
+    The timestamp is when the file was written, not the start of the session.
+
+  File format (CSV, opens in Excel):
+    # Mosart Template Stats — 2026-03-18T23:59:00.000Z
+    # Reason: midnight
+    # Total switches: 8432
+    # Unique templates: 61
+    # Tracking since: 2026-03-18T07:00:00.000Z
+    template,count
+    "CAMERA 1 NEWS DESK",1204
+    "FULL SOUND CLIPS",987
+    ...
+
+    Sorted by count descending. The comment lines (starting with #) are
+    ignored by Excel and most CSV tools.
+
+  The stats-logs\ folder is not committed to version control.
 
 
 --------------------------------------------------------------------------------
@@ -316,14 +358,16 @@ FILES
 
   index.html           The single-page dashboard (served from /).
 
-  .env                 Local configuration (not committed to version control
-                       if it contains secrets; see .env.example for a template).
+  .env                 Local configuration. See .env.example for all options.
 
   .env.example         Template showing all supported config options.
 
   start.bat            Double-click shortcut to start the server on Windows.
 
   package.json         Node dependencies: express, ws, chokidar, dotenv.
+
+  stats-logs\          Auto-created folder for daily CSV snapshots.
+                       Not committed to version control.
 
 
 ================================================================================
