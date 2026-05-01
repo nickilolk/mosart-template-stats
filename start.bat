@@ -12,8 +12,8 @@ if not exist "%SHORTCUT%" (
       "$s.Save()"
 )
 
-:: Read PORT from .env (fallback to 3000)
-set PORT=3000
+:: Read PORT from .env (fallback to 3002)
+set PORT=3002
 for /f "usebackq tokens=1,2 delims==" %%a in (".env") do (
     if "%%a"=="PORT" set PORT=%%b
 )

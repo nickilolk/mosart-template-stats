@@ -7,7 +7,7 @@
  *   CHANNEL_TEMPLATES=C:\channeltemplate\channeltemplates.xml
  *   USE_POLLING=false
  *   POLLING_INTERVAL=1000
- *   STATS_LOG_DIR=.\stats-logs   (optional, defaults to stats-logs beside server.js)
+ *   STATS_LOG_DIR=C:\MMLogs\stats-logs   (optional, defaults to C:\MMLogs\stats-logs)
  */
 
 require('dotenv').config();
@@ -18,28 +18,39 @@ const path       = require('path');
 const fs         = require('fs');
 const { WebSocketServer } = require('ws');
 const LogWatcher = require('./watcher');
-const { loadChannelTemplates, computeUnused, DEFAULT_PATH } = require('./channelTemplates');
+const { loadChannelTemplates, computeUnused, computeUnusedByChannel, DEFAULT_PATH } = require('./channelTemplates');
+const { loadNewsroomSettings, normalizeTemplateName, DEFAULT_PATH: NS_DEFAULT_PATH } = require('./newsroomSettings');
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const PORT               = parseInt(process.env.PORT || '3000', 10);
 const LOG_FOLDER         = process.env.LOG_FOLDER         || 'C:\\MMLogs';
 const CHANNEL_TEMPLATES  = process.env.CHANNEL_TEMPLATES  || DEFAULT_PATH;
+const NEWSROOM_SETTINGS  = process.env.NEWSROOM_SETTINGS  || NS_DEFAULT_PATH;
 const USE_POLLING        = process.env.USE_POLLING === 'true';
 const POLLING_INTERVAL   = parseInt(process.env.POLLING_INTERVAL || '1000', 10);
-const STATS_LOG_DIR      = path.resolve(process.env.STATS_LOG_DIR || path.join(__dirname, 'stats-logs'));
+let STATS_LOG_DIR        = path.resolve(process.env.STATS_LOG_DIR || 'C:\\MMLogs\\stats-logs');
 const MAX_RECENT         = 100;
 
 // ─── ChannelTemplates ─────────────────────────────────────────────────────────
 
 // knownTemplates is Map<UPPER, displayName> or null if file not found
-let knownTemplates = null, gallery = null;
+let knownTemplates = null, gallery = null, channelGroups = null, directTakeMap = null;
 function reloadChannelTemplates() {
   const result = loadChannelTemplates(CHANNEL_TEMPLATES);
-  if (result) { knownTemplates = result.templates; gallery = result.gallery; }
-  else         { knownTemplates = null; gallery = null; }
+  if (result) { knownTemplates = result.templates; gallery = result.gallery; channelGroups = result.channelGroups; directTakeMap = result.directTakeMap; }
+  else         { knownTemplates = null; gallery = null; channelGroups = null; directTakeMap = null; }
 }
 reloadChannelTemplates();
+
+// ─── NewsroomSettings ─────────────────────────────────────────────────────────
+
+// tagMap is Map<LOCAL_TAG_NAME_UPPER, MOSART_TYPE_UPPER> or null if file not found
+let tagMap = null;
+function reloadNewsroomSettings() {
+  tagMap = loadNewsroomSettings(NEWSROOM_SETTINGS);
+}
+reloadNewsroomSettings();
 
 // ─── Stats store ──────────────────────────────────────────────────────────────
 
@@ -141,7 +152,17 @@ function scheduleMidnight() {
 
 // ─── Template hit handler ──────────────────────────────────────────────────────
 
-function onTemplate(templateName, meta) {
+function resolveDirectTake(name) {
+  if (!name.startsWith('DIRECTTAKE + ')) return name;
+  const recallnr = name.slice('DIRECTTAKE + '.length).trim();
+  if (directTakeMap && directTakeMap.has(recallnr)) {
+    return 'DIRECTTAKE + ' + directTakeMap.get(recallnr);
+  }
+  return name; // fallback: keep recall number if not found in XML
+}
+
+function onTemplate(rawName, meta) {
+  const templateName = resolveDirectTake(normalizeTemplateName(rawName, tagMap));
   stats.templates[templateName] = (stats.templates[templateName] || 0) + 1;
   stats.totalEvents++;
 
@@ -250,8 +271,12 @@ app.get('/api/unused', (_req, res) => {
   if (unused === null) {
     return res.status(503).json({ error: 'ChannelTemplates.xml not loaded', path: CHANNEL_TEMPLATES });
   }
+  const byChannel = (channelGroups && channelGroups.size > 0)
+    ? computeUnusedByChannel(channelGroups, stats.templates)
+    : null;
   res.json({
     unused,
+    byChannel,
     unusedCount: unused.length,
     knownCount:  knownTemplates.size,
     usedCount:   Object.keys(stats.templates).length,
@@ -281,7 +306,8 @@ app.post('/api/reset', (_req, res) => {
 
 app.post('/api/reload-templates', (_req, res) => {
   reloadChannelTemplates();
-  res.json({ ok: true, knownCount: knownTemplates ? knownTemplates.size : 0 });
+  reloadNewsroomSettings();
+  res.json({ ok: true, knownCount: knownTemplates ? knownTemplates.size : 0, tagMapCount: tagMap ? tagMap.size : 0 });
 });
 
 function updateEnv(updates) {
@@ -297,18 +323,23 @@ function updateEnv(updates) {
 }
 
 app.post('/api/config', (req, res) => {
-  const { logFolder, channelTemplates, usePolling, pollingInterval } = req.body;
+  const { logFolder, channelTemplates, newsroomSettings, statsLogDir, usePolling, pollingInterval } = req.body;
 
   updateEnv({
-    LOG_FOLDER:       logFolder,
-    CHANNEL_TEMPLATES: channelTemplates,
-    USE_POLLING:      String(usePolling),
-    POLLING_INTERVAL: String(pollingInterval),
+    LOG_FOLDER:         logFolder,
+    CHANNEL_TEMPLATES:  channelTemplates,
+    NEWSROOM_SETTINGS:  newsroomSettings,
+    STATS_LOG_DIR:      statsLogDir,
+    USE_POLLING:        String(usePolling),
+    POLLING_INTERVAL:   String(pollingInterval),
   });
 
-  // Channel templates can be applied immediately without restart
+  // These can be applied immediately without restart
   process.env.CHANNEL_TEMPLATES = channelTemplates;
+  process.env.NEWSROOM_SETTINGS = newsroomSettings;
+  STATS_LOG_DIR = path.resolve(statsLogDir);
   reloadChannelTemplates();
+  reloadNewsroomSettings();
 
   const restartRequired = (
     path.resolve(logFolder) !== path.resolve(LOG_FOLDER) ||
@@ -316,17 +347,21 @@ app.post('/api/config', (req, res) => {
     String(pollingInterval) !== String(POLLING_INTERVAL)
   );
 
-  res.json({ ok: true, restartRequired, knownCount: knownTemplates ? knownTemplates.size : 0 });
+  res.json({ ok: true, restartRequired, knownCount: knownTemplates ? knownTemplates.size : 0, tagMapCount: tagMap ? tagMap.size : 0 });
 });
 
 app.get('/api/config', (_req, res) => res.json({
-  logFolder:          path.resolve(LOG_FOLDER),
-  channelTemplates:   path.resolve(CHANNEL_TEMPLATES),
-  templatesLoaded:    knownTemplates !== null,
-  knownCount:         knownTemplates ? knownTemplates.size : 0,
-  gallery:            gallery || null,
-  usePolling:         USE_POLLING,
-  pollInterval:       POLLING_INTERVAL,
+  logFolder:           path.resolve(LOG_FOLDER),
+  channelTemplates:    path.resolve(CHANNEL_TEMPLATES),
+  templatesLoaded:     knownTemplates !== null,
+  knownCount:          knownTemplates ? knownTemplates.size : 0,
+  gallery:             gallery || null,
+  newsroomSettings:    path.resolve(NEWSROOM_SETTINGS),
+  tagMapLoaded:        tagMap !== null,
+  tagMapCount:         tagMap ? tagMap.size : 0,
+  statsLogDir:         STATS_LOG_DIR,
+  usePolling:          USE_POLLING,
+  pollInterval:        POLLING_INTERVAL,
 }));
 
 // ─── WebSocket ────────────────────────────────────────────────────────────────
@@ -337,7 +372,7 @@ const clients = new Set();
 
 wss.on('connection', ws => {
   clients.add(ws);
-  ws.send(JSON.stringify({ type: 'init', ...getFullStats() }));
+  ws.send(JSON.stringify({ type: 'init', ...getFullStats(), startupProcessing }));
   ws.on('close', () => clients.delete(ws));
   ws.on('error', err => console.error('[WS error]', err.message));
 });
@@ -349,9 +384,15 @@ function broadcast(payload) {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
+let startupProcessing = true; // true until watcher signals 'done'
+
 const watcher = new LogWatcher(LOG_FOLDER, onTemplate, {
   usePolling:   USE_POLLING,
   pollInterval: POLLING_INTERVAL,
+  onStatus: (status, done, total) => {
+    startupProcessing = (status === 'processing');
+    broadcast({ type: 'startup_status', processing: startupProcessing, done, total });
+  },
 });
 
 watcher.start();
@@ -363,6 +404,8 @@ server.listen(PORT, () => {
   console.log('  Log folder      : ' + path.resolve(LOG_FOLDER));
   console.log('  ChannelTemplates: ' + path.resolve(CHANNEL_TEMPLATES) +
     (knownTemplates ? ` (${knownTemplates.size} templates)` : ' (NOT FOUND)'));
+  console.log('  NewsroomSettings: ' + path.resolve(NEWSROOM_SETTINGS) +
+    (tagMap ? ` (${tagMap.size} tag mappings)` : ' (NOT FOUND — type names used as-is)'));
   console.log('  Stats log dir   : ' + STATS_LOG_DIR);
   console.log('');
   scheduleMidnight();

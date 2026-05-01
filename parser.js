@@ -19,12 +19,29 @@ function joinTemplateParts(raw) {
 
 /**
  * ExSwitchBackGrounds: "...Template=FULL SOUND CLIPS(1)+CHANNEL SEQUENCE "
+ * Format: CHANNEL_LABEL(TYPE_NUMBER)+TEMPLATE_NAME
+ * Extracts the numeric type from the first part and the template name from the rest.
  */
 function parseTemplates(cdataContent) {
   const m = cdataContent.match(/Template=([^\]]+)/);
   if (!m) return [];
-  const name = joinTemplateParts(m[1]);
-  return name ? [name] : [];
+
+  const parts = m[1].split('+');
+  if (parts.length < 2) return [];
+
+  // First part contains the type number: "FULL SOUND CLIPS(1)"
+  const typeMatch = parts[0].match(/\((\d+)\)/);
+  if (!typeMatch) return [];
+  const typeNum = typeMatch[1];
+
+  // Remaining parts form the template name; strip trailing "Autotake N"
+  const templateName = parts.slice(1)
+    .map(t => t.replace(/\s+Autotake\s+\d+\s*$/i, '').trim())
+    .filter(t => t.length > 0)
+    .join(' + ');
+
+  if (!templateName) return [];
+  return [`${typeNum} + ${templateName}`];
 }
 
 /**
@@ -43,19 +60,20 @@ function parseStory(cdataContent) {
 function parseTakeExternals(cdataContent) {
   const m = cdataContent.match(/External Type (.+?) performed/i);
   if (!m) return [];
+  if (m[1].trim().toUpperCase().startsWith('COMMAND+')) return [];
   const name = joinTemplateParts(m[1]);
   return name ? [name] : [];
 }
 
 /**
- * ExDirectTake: "Directtake Nr 868 0 - 868 OPEN REPLAY GROUP"
- * Output: "DIRECTTAKE + 868 OPEN REPLAY GROUP"
+ * ExDirectTake: "Directtake Nr 10 0010-presALL=UP - KEEP LEVEL"
+ * Emits the recall number only — server resolves it to a name via ChannelTemplates.xml.
+ * Output: "DIRECTTAKE + 10"
  */
 function parseExDirectTake(cdataContent) {
-  const m = cdataContent.match(/Directtake Nr \d+ \d+ - (.+)/i);
+  const m = cdataContent.match(/Directtake Nr (\d{1,4}) /i);
   if (!m) return [];
-  const name = m[1].trim();
-  return name.length > 0 ? [`DIRECTTAKE + ${name}`] : [];
+  return [`DIRECTTAKE + ${m[1]}`];
 }
 
 /**
