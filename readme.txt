@@ -12,6 +12,8 @@ REQUIREMENTS
   - Node.js 18 or later  (https://nodejs.org)
   - Viz Mosart running and writing log files to a folder you can access
   - Optional: ChannelTemplates.xml if you want "unused template" detection
+  - Optional: NewsroomSettings.xml if you want local tag names resolved to
+              standard Mosart type names
 
 
 --------------------------------------------------------------------------------
@@ -48,11 +50,21 @@ CONFIGURATION  (.env file)
 
   CHANNEL_TEMPLATES
     Path to your ChannelTemplates.xml file.
-    Used to detect templates that exist in the system but haven't been used.
+    Used to detect templates that exist in the system but haven't been used,
+    and to resolve DirectTake recall numbers to template names.
     If the file is not found the server still runs — the "Unused Templates"
     feature is simply unavailable.
     Default: C:\channeltemplate\channeltemplates.xml
     Example: CHANNEL_TEMPLATES=C:\channeltemplate\channeltemplates.xml
+
+  NEWSROOM_SETTINGS
+    Path to your NewsroomSettings.xml file.
+    Used to map local newsroom tag names to standard Mosart template types
+    (e.g. a local tag "INDSLAG" might map to "PACKAGE").
+    If the file is not found the server still runs — type names from the log
+    are used as-is.
+    Default: C:\channeltemplate\newsroomsettings.xml
+    Example: NEWSROOM_SETTINGS=C:\channeltemplate\newsroomsettings.xml
 
   USE_POLLING
     Set to true if log files are on a network drive (UNC path).
@@ -70,8 +82,9 @@ CONFIGURATION  (.env file)
   STATS_LOG_DIR
     Where daily stats CSV files are written (see STATS LOGGING below).
     The folder is created automatically if it does not exist.
-    Default: stats-logs\ beside server.js
-    Example: STATS_LOG_DIR=C:\MosartStats\logs
+    Can also be changed in the Settings panel without restarting.
+    Default: C:\MMLogs\stats-logs
+    Example: STATS_LOG_DIR=C:\MMLogs\stats-logs
 
 Network drive example:
 
@@ -89,9 +102,11 @@ The dashboard opens at http://localhost:3002 and has two main tabs.
 
   HEADER BAR
   ----------
-  - Connection indicator (green dot = live, red = reconnecting)
+  - Connection indicator:
+      Amber dot  — reading log files on startup (shows "Reading log files… N/M")
+      Green dot  — live, all files loaded
+      Red dot    — WebSocket disconnected, reconnecting automatically
   - The log folder currently being watched
-  - How many templates are loaded from ChannelTemplates.xml
   - Settings button (gear icon, top right)
 
   STAT CARDS  (top of page)
@@ -99,7 +114,7 @@ The dashboard opens at http://localhost:3002 and has two main tabs.
   - Total Switches     Total number of template switch events seen since
                        the server started (or last reset)
   - Unique Templates   How many distinct template names have been seen
-  - Most Used          The template with the highest switch count
+  - Total Templates    Total number of templates in ChannelTemplates.xml
   - Unused Templates   Templates in ChannelTemplates.xml that haven't been
                        used at all (requires CHANNEL_TEMPLATES to be set)
   - Tracking Since     When the current session started
@@ -110,6 +125,10 @@ The dashboard opens at http://localhost:3002 and has two main tabs.
   A horizontal bar chart of the most-used templates.
 
   Controls:
+    Search box
+      Filter templates shown in the chart and Live Events by name.
+      Works together with the category filter buttons below.
+
     Timeframe dropdown
       All time       — show everything since the server started
       Last hour      — last 60 minutes of events
@@ -123,17 +142,19 @@ The dashboard opens at http://localhost:3002 and has two main tabs.
       Click a coloured button to show only templates of that type.
       Click again to deselect. Multiple filters can be active at once.
 
-        CAM   — CAMERA templates         (green)
-        PKG   — FULL SOUND CLIP packages (blue)
-        VO    — VOICE_OVER               (split blue/green)
-        GFX   — GRAPHICS                 (amber)
-        LIV   — LIVE                     (red)
-        DVE   — VIDEO_EFFECT             (split amber/red)
-        BRK   — BREAK templates          (light grey)
-        JIN   — MISC / jingles           (grey)
-        🔊    — AUDIO templates
-        +     — ACCESSORIES
-        ⚡    — DIRECTTAKE events
+        CAM  — Camera                        (green)
+        PKG  — Package                       (blue)
+        VO   — Voiceover                     (split blue/green)
+        LIV  — Live                          (red)
+        GFX  — Full-screen graphics          (amber)
+        DVE  — DVE                           (split amber/red)
+        JIN  — Jingles                       (grey)
+        PHN  — Telephone interview           (split amber/white)
+        FLT  — Floats                        (split green/blue)
+        BRK  — Break                         (white)
+        🔊   — Playsound / audio             (black)
+        +    — Accessories                   (black)
+        ⚡   — Directtakes                  (purple)
 
     Reset button
       Clears all collected statistics. Requires confirmation.
@@ -170,10 +191,17 @@ The dashboard opens at http://localhost:3002 and has two main tabs.
   Channel Templates section:
     File path          — path to ChannelTemplates.xml
 
+  Newsroom Settings section:
+    File path          — path to NewsroomSettings.xml
+
+  Stats Logging section:
+    Output folder      — where CSV snapshot files are written
+
   Clicking "Save settings" writes to .env immediately.
   If you changed the log folder or polling settings, the server needs to
   be restarted for those changes to take effect (a warning will appear).
-  Changes to the ChannelTemplates path apply immediately without restart.
+  All other changes (templates, newsroom settings, stats folder) apply
+  immediately without restart.
 
   Data section:
     Download JSON / Download XML
@@ -191,17 +219,23 @@ WHAT IS TRACKED
 The parser watches for three types of Mosart log events:
 
   ExSwitchBackGrounds
-    A standard template switch. Extracts the Template= field from the
-    CDATA section. Multiple templates separated by "+" are joined as
-    "TEMPLATE TYPE + TEMPLATE VARIANT". Slot numbers like "(1)" are stripped.
-    The Story name from the log is also captured and shown in Live Events.
+    The standard template switch event. The CDATA contains the channel label,
+    a numeric type code in parentheses (e.g. "(1)"), and the template name
+    separated by "+". The type number is resolved to a standard Mosart type
+    name via NewsroomSettings.xml or the built-in type table (e.g. 1 →
+    PACKAGE, 0 → CAMERA). The story name is also captured and shown in the
+    Live Events panel.
 
   TakeExternals
-    External type events, e.g. "ACCESSORIES+COUNTDOWN performed".
-    Treated the same as a template switch.
+    External type events such as PLAYSOUND and ACCESSORIES. The type name and
+    template name are read directly from the log. COMMAND+ events are ignored
+    as they are internal Mosart control messages and not template switches.
 
   ExDirectTake
-    Direct take events. Logged as "DIRECTTAKE + <name>".
+    Direct take events. The recall number from the log is looked up in the
+    DirectTakes group in ChannelTemplates.xml to resolve the human-readable
+    template name. If ChannelTemplates.xml is not loaded, the recall number
+    is stored as the name.
 
 Events are counted per unique template name. The count is cumulative for
 the life of the server session (or until Reset is clicked).
@@ -222,8 +256,8 @@ This is a snapshot of totals — not a per-event log — so the files stay small
     - Whenever the in-memory event buffer reaches 200,000 events
 
   Where files are written:
-    stats-logs\  (beside server.js, created automatically)
-    Override with STATS_LOG_DIR= in .env.
+    C:\MMLogs\stats-logs\  (created automatically if it does not exist)
+    Override with STATS_LOG_DIR= in .env or via the Settings panel.
 
   File naming:
     stats-YYYY-MM-DD_HH-MM-SS.csv
@@ -243,7 +277,7 @@ This is a snapshot of totals — not a per-event log — so the files stay small
     Sorted by count descending. The comment lines (starting with #) are
     ignored by Excel and most CSV tools.
 
-  The stats-logs\ folder is not committed to version control.
+  The stats-logs folder is not committed to version control.
 
 
 --------------------------------------------------------------------------------
@@ -261,6 +295,22 @@ If a file is removed (Mosart rotates logs), its state is cleaned up.
 
 The watcher starts from byte 0 of every file that exists when the server
 starts, so any events already in the logs will be counted immediately.
+Files are read one at a time in chunks to avoid high memory usage on
+startup. Progress is shown in the dashboard header.
+
+
+--------------------------------------------------------------------------------
+KNOWN LIMITATIONS
+--------------------------------------------------------------------------------
+
+  Directtakes entered directly in the newsroom system (NCS) — rather than
+  triggered through templates or from the GUI — are not captured by this
+  tool.
+
+  Template set context is not tracked. When a template such as "CAMERA 1" is
+  used, it may have been taken from any of the configured template sets. As a
+  result, a used template is removed from the Unused Templates list across all
+  template sets, not just the one it was actually taken from.
 
 
 --------------------------------------------------------------------------------
@@ -287,14 +337,52 @@ API ENDPOINTS  (for integration / scripting)
     Clears all statistics.
 
   POST /api/reload-templates
-    Reloads ChannelTemplates.xml from disk without restarting.
+    Reloads ChannelTemplates.xml and NewsroomSettings.xml from disk without
+    restarting.
 
   POST /api/config   (JSON body)
     Updates configuration. Body fields:
       logFolder         string
       channelTemplates  string
+      newsroomSettings  string
+      statsLogDir       string
       usePolling        boolean
       pollingInterval   number
+
+
+--------------------------------------------------------------------------------
+WINDOWS SERVICE  (run on boot without logging in)
+--------------------------------------------------------------------------------
+
+You can install the app as a Windows Service so it starts automatically when
+the machine boots, with no need to be logged in.
+
+  Prerequisites:
+
+    npm install -g node-windows
+
+  Install the service (run once, as Administrator):
+
+    node install-service.js
+
+  The service will appear in services.msc as "Mosart Template Stats" and will
+  start immediately. It will also restart automatically if it crashes.
+
+  To run on a custom port:
+
+    set PORT=3002 && node install-service.js
+
+  To uninstall the service (run as Administrator):
+
+    node install-service.js remove
+
+  Notes:
+    - The service reads .env on startup just like the normal server. Make sure
+      .env is configured correctly before installing.
+    - If you change .env after installing, restart the service via services.msc
+      or: net stop "Mosart Template Stats" && net start "Mosart Template Stats"
+    - Log files for the service wrapper are written next to install-service.js
+      in a folder named "daemon".
 
 
 --------------------------------------------------------------------------------
@@ -333,12 +421,17 @@ FILES
 
   watcher.js           Folder watcher using chokidar. Tails .log files as
                        they grow; parses .xml files in full on arrival.
+                       Files are read sequentially in 256 KB chunks on
+                       startup to avoid high memory usage.
 
   parser.js            Stateful line-by-line parser. Handles
                        ExSwitchBackGrounds, TakeExternals, and ExDirectTake.
 
   channelTemplates.js  Loads ChannelTemplates.xml and computes which
                        templates have not been used.
+
+  newsroomSettings.js  Loads NewsroomSettings.xml and maps local newsroom
+                       tag names to standard Mosart template type names.
 
   index.html           The single-page dashboard (served from /).
 
@@ -347,6 +440,9 @@ FILES
   .env.example         Template showing all supported config options.
 
   start.bat            Double-click shortcut to start the server on Windows.
+
+  install-service.js   Installs / uninstalls the app as a Windows Service
+                       (see WINDOWS SERVICE section above).
 
   package.json         Node dependencies: express, ws, chokidar, dotenv.
 
