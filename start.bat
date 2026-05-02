@@ -33,7 +33,7 @@ if not exist "node_modules\" (
 )
 
 :: Start the server in a new window
-start "Viz Mosart Template Stats — Server" cmd /k "node server.js"
+start "Viz Mosart Template Stats — Server" cmd /k "node "%~dp0server.js""
 
 :: Wait for server to start, then open browser
 timeout /t 2 /nobreak >nul

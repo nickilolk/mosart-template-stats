@@ -26,6 +26,16 @@ QUICK START
   internet connection that one time). After that it starts the server and
   opens the dashboard in your browser straight away.
 
+  Note: the first time, run start.bat as Administrator (right-click →
+  "Run as administrator") so that npm can write files to the install folder.
+
+  If you see a "Cannot find module" error, open PowerShell, navigate to the
+  install folder, and run:
+
+    npm install
+
+  Then double-click start.bat again.
+
   The dashboard will update in real time as Mosart writes to its log files.
   No browser refresh is needed.
 
